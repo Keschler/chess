@@ -4,8 +4,7 @@ import chess.svg
 from search import Search
 
 
-
-def show_board(chess_board):
+cdef show_board(chess_board):
     svg = chess.svg.board(
         chess_board
     )
@@ -13,11 +12,12 @@ def show_board(chess_board):
         f.write(svg)
 
 
-def main():
+cpdef main():
     chess_board = chess.Board()
+    chess_board.set_fen("8/1k6/pppp3p/8/8/PPP5/K7/8 w - - 0 1")
     search = Search()
     while True:
-        evaluation, best_move = search.minimax(chess_board, 4)
+        evaluation, best_move = search.minimax(chess_board, 10)
         print("Evaluation", evaluation, chess_board.fen())
         chess_board.push(best_move)
         if chess_board.is_checkmate():
@@ -34,7 +34,7 @@ def main():
         try:
             chess_board.push_san(current_move)
         except ValueError:
-            print("Invalid move, try again.")
+            print("Invalid move, try again.", ValueError)
             continue
         if chess_board.is_checkmate():
             print("checkmate")

@@ -1,13 +1,17 @@
 import chess
 
-from constants import KNIGHT_TABLE, WHITE_PAWN_TABLE, BLACK_PAWN_TABLE, KING_ENDGAME_CHECKMATE_TABLE, KING_ENDGAME_TABLE
+from constants import get_knight_table, get_white_pawn_table, get_king_endgame_table, get_black_pawn_table, \
+    get_king_endgame_checkmate_table, get_passed_pawn_bonuses
+
+ctypedef unsigned long ulong
 
 
 class Eval:
     def __init__(self, bitboard_tables, board=None):
         self.board = board
         self.b_w_knight, self.b_w_king, self.b_w_bishop, self.b_w_queen, self.b_w_rook, self.b_w_pawn, self.b_b_bishop, self.b_b_queen, self.b_b_rook, self.b_b_knight, self.b_b_king, self.b_b_pawn = bitboard_tables
-
+        self.KNIGHT_TABLE, self.WHITE_PAWN_TABLE, self.KING_ENDGAME_CHECKMATE_TABLE, self.KING_ENDGAME_TABLE, self.BLACK_PAWN_TABLE = get_knight_table(), get_white_pawn_table(), get_king_endgame_checkmate_table(), get_king_endgame_table(), get_black_pawn_table()
+        self.passes_pawn_bonuses = get_passed_pawn_bonuses()
     def only_pawns_and_kings_left(self):
         pieces = [self.b_b_queen, self.b_b_knight, self.b_b_bishop, self.b_b_rook, self.b_w_bishop, self.b_w_knight,
                   self.b_w_rook, self.b_w_queen]
@@ -23,64 +27,141 @@ class Eval:
         cdef int dst_between_kings = file_dst + rank_dst
         return dst_between_kings
 
-    def force_king_into_corner(self, board):  # Incentivize forcing the enemy king into corner and using his own king
+    def force_king_into_corner(self, board,
+                               pre_score):  # Incentivize forcing the enemy king into corner and using his own king
+        cdef int square_index
         cdef int evaluation = 0
-        cdef float multiplicator = (32 - chess.popcount(board.occupied)) / 100 * 2
-        if self.only_pawns_and_kings_left():
-             multiplicator = 0
+        cdef float multiplication = ((32 - chess.popcount(board.occupied)) / 100) / 2
+        if self.only_pawns_and_kings_left() or -2 <= pre_score <= 2:
+            multiplication = 0
         for square_index in range(64):
             if self.b_b_king & (1 << square_index):
-                evaluation += KING_ENDGAME_CHECKMATE_TABLE[square_index]
+                evaluation += self.KING_ENDGAME_CHECKMATE_TABLE[square_index]
         cdef int dst_between_kings = self.distance_between_kings()
         evaluation += 14 - dst_between_kings
-        return evaluation * multiplicator
+        return evaluation * multiplication
 
     def get_king_into_center(self):
         cdef int bonus_white = 0
         cdef int bonus_black = 0
+        cdef int square_index
         if self.only_pawns_and_kings_left():
             for square_index in range(64):
                 if self.b_b_king & (1 << square_index):
-                    bonus_black += KING_ENDGAME_TABLE[square_index]
+                    bonus_black += self.KING_ENDGAME_TABLE[square_index]
                 elif self.b_w_king & (1 << square_index):
-                    bonus_white += KING_ENDGAME_TABLE[square_index]
+                    bonus_white += self.KING_ENDGAME_TABLE[square_index]
         return bonus_white - bonus_black
+    def rook_mobility_bonus(self, rooks):
+        cdef float bonus = 0
+        cdef int direction
+        cdef int distance
+        cdef int target_square
+        if not rooks:
+            return 0
+        for rook in rooks:
+            for direction in [-9, -7, 7, 9]:
+                for distance in range(1, 8):
+                    target_square = rook + (direction * distance)
+                    if 0 <= target_square < 64 and self.board.piece_at(target_square) is None:
+                        bonus += 0.2
+        return bonus
 
+    def bishop_mobility_bonus(self, bishops):
+        cdef float bonus = 0
+        cdef int direction
+        cdef int distance
+        cdef int target_square
+        if not bishops:
+            return 0
+        for bishop in bishops:
+            for direction in [-9, -7, 7, 9]:
+                for distance in range(1, 8):
+                    target_square = bishop + (direction * distance)
+                    if 0 <= target_square < 64 and self.board.piece_at(target_square) is None:
+                        bonus += 0.2
+        return bonus
     def mobility_bonus(self):
-        cdef float black_bonus = 0
-        cdef float white_bonus = 0
-        black_bishops = []
-        white_bishops = []
+        cdef float bonus = 0
+        cdef list black_bishops = []
+        cdef list white_bishops = []
+        cdef list black_rooks = []
+        cdef list white_rooks = []
         for square_index in range(64):
             if self.b_b_bishop & (1 << square_index):
                 black_bishops.append(square_index)
             elif self.b_w_bishop & (1 << square_index):
                 white_bishops.append(square_index)
-        if not black_bishops and not white_bishops:
-            return 0
-        else:
-            for black_bishop in black_bishops:
-                for direction in [-9, -7, 7, 9]:
-                    for distance in range(1, 8):
-                        target_square = black_bishop + (direction * distance)
-                        if 0 <= target_square < 64 and self.board.piece_at(target_square) is None:
-                            black_bonus += 0.2
-            for white_bishop in white_bishops:
-                for direction in [-9, -7, 7, 9]:
-                    for distance in range(1, 8):
-                        target_square = white_bishop + (direction * distance)
-                        if 0 <= target_square < 64 and self.board.piece_at(target_square) is None:
-                            white_bonus += 0.2
-        return white_bonus - black_bonus
+            elif self.b_b_rook & (1 << square_index):
+                black_rooks.append(square_index)
+            elif self.b_w_rook & (1 << square_index):
+                white_rooks.append(square_index)
+        bonus += self.bishop_mobility_bonus(white_bishops) - self.bishop_mobility_bonus(black_bishops)
+        bonus += self.rook_mobility_bonus(white_rooks) - self.rook_mobility_bonus(black_rooks)
+        return bonus
+    def passed_pawn_mask(self):
+        cdef list passed_pawns_white = []
+        cdef list passed_pawns_black = []
+        cdef list passed_pawns_masks_white = []
+        cdef list passed_pawns_masks_black = []
+        cdef ulong file_A = 0x0101010101010101
+        cdef int rank_index
+        cdef ulong file_mask
+        cdef ulong file_mask_left
+        cdef ulong file_mask_right
+        cdef ulong file_triple_mask
+        cdef ulong passed_pawn_mask
+        for square_index in range(64):
+            if self.b_w_pawn & (1 << square_index):
+                passed_pawns_white.append(square_index)
+                file_index = chess.square_file(square_index)
+                file_mask = file_A << file_index
+                file_mask_left = file_A << max(0, file_index - 1)
+                file_mask_right = file_A << min(7, file_index + 1)
+                triple_file_mask = file_mask | file_mask_left | file_mask_right
 
+                rank_index = chess.square_rank(square_index)
+                forward_mask = 0xFFFFFFFFFFFFFFFF << 8 * (rank_index + 1)
 
-    def eval(self):
+                passed_pawn_mask = forward_mask & triple_file_mask
+                passed_pawns_masks_white.append(passed_pawn_mask)
+            elif self.b_b_pawn & (1 << square_index):
+                passed_pawns_black.append(square_index)
+                file_index = chess.square_file(square_index)
+                file_mask = file_A << file_index
+                file_mask_left = file_A << max(0, file_index - 1)
+                file_mask_right = file_A << min(7, file_index + 1)
+                triple_file_mask = file_mask | file_mask_left | file_mask_right  # Get the files next to the pawn and the file the pawn is on
+
+                rank_index = chess.square_rank(square_index)
+                forward_mask = 0xFFFFFFFFFFFFFFFF << 8 * (7 - rank_index)
+
+                passed_pawn_mask = forward_mask & triple_file_mask  # Get all the squares in front, 1 left and 1 right of the pawn
+                passed_pawns_masks_black.append(passed_pawn_mask)
+        return passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black, passed_pawns_white
+    def passed_pawns(self):
+        cdef float bonus = 0
+        passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black, passed_pawns_white = self.passed_pawn_mask()
+        for i in range(len(passed_pawns_white)):
+            if (self.b_b_pawn & passed_pawns_masks_white[i]) == 0:  # If it's a passed pawn
+                rank = chess.square_rank(passed_pawns_white[i])
+                num_squares_from_promotion = 7 - rank
+                bonus += self.passes_pawn_bonuses[num_squares_from_promotion]
+        for k in range(len(passed_pawns_black)):
+            if (self.b_w_pawn & passed_pawns_masks_black[k]) == 0:  # If it's a passed pawn
+                rank = chess.square_rank(passed_pawns_black[k])
+                num_squares_from_promotion = rank
+                bonus -= self.passes_pawn_bonuses[num_squares_from_promotion]
+        print(bonus)
+        return bonus
+
+    def eval(self, depth, original_depth):
         # Checkmate and draw conditions
         if self.board.is_checkmate():
-            if self.board.turn == chess.BLACK:
-                return 1000
+            if self.board.turn == chess.BLACK:  # If white checkmates
+                return 1000 - abs((depth - original_depth))
             else:
-                return -1000
+                return -1000 + abs((depth - original_depth))
         if (self.board.can_claim_threefold_repetition() or self.board.is_repetition() or self.board.is_variant_draw()
                 or self.board.is_stalemate()):
             print("draw", self.board)
@@ -88,8 +169,8 @@ class Eval:
 
         # Define piece values
         cdef int pawn_value = 1
-        cdef int knight_value = 3
-        cdef int bishop_value = 3
+        cdef float knight_value = 3.1
+        cdef float bishop_value = 3.3
         cdef int rook_value = 5
         cdef int queen_value = 9
 
@@ -108,24 +189,27 @@ class Eval:
                 rook_value * chess.popcount(self.b_b_rook) +
                 queen_value * chess.popcount(self.b_b_queen)
         )
-
+        cdef int square_index
         # Positional evaluation using piece-square tables
         for square_index in range(64):
             if self.b_w_knight & (1 << square_index):
-                white_material += KNIGHT_TABLE[square_index]
+                white_material += self.KNIGHT_TABLE[square_index]
             if self.b_w_pawn & (1 << square_index):
-                white_material += WHITE_PAWN_TABLE[square_index]
+                white_material += self.WHITE_PAWN_TABLE[square_index]
             if self.b_b_knight & (1 << square_index):
-                black_material += KNIGHT_TABLE[square_index]
+                black_material += self.KNIGHT_TABLE[square_index]
             if self.b_b_pawn & (1 << square_index):
-                black_material += BLACK_PAWN_TABLE[square_index]
+                black_material += self.BLACK_PAWN_TABLE[square_index]
 
         # Additional bonuses
         white_material += self.get_king_into_center()
         black_material += self.get_king_into_center()
-        cdef float king_corner_bonus = self.force_king_into_corner(self.board)
+        cdef float king_corner_bonus = self.force_king_into_corner(self.board, white_material - black_material)
         cdef float mobility_bonus = self.mobility_bonus()
+        cdef float passed_pawns_bonus = self.passed_pawns()
         # Final evaluation score
-        cdef float total_score = white_material - black_material + king_corner_bonus + mobility_bonus
-        print("Total score", total_score, "Pre score", white_material - black_material, self.board.fen())
+        cdef float total_score = white_material - black_material + king_corner_bonus + mobility_bonus + passed_pawns_bonus
+        print(
+            "Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
+            king_corner_bonus)
         return total_score

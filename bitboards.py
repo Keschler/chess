@@ -15,6 +15,7 @@ class Bitboards:
         self.b_b_knight = chess.BB_EMPTY
         self.b_b_king = chess.BB_EMPTY
         self.b_b_pawn = chess.BB_EMPTY
+        print(type(self.b_w_king))
 
     def update_bitboards(self, board):
         self.b_w_knight = int(board.pieces(chess.KNIGHT, chess.WHITE))

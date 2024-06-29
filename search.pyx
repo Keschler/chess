@@ -6,6 +6,7 @@ from bitboards import Bitboards
 from evaluation import Eval
 from libc.stdint cimport uint64_t
 
+
 class Search:
     def __init__(self):  # For transposition tables
         self.bitboard = Bitboards()
@@ -37,12 +38,11 @@ class Search:
             ep_rank = chess.square_file(board.ep_square)
             zobrist_key ^= self.zobrist_en_passant_file[ep_rank]
         return zobrist_key
-
     def minimax(self, board, int depth, float alpha=float("-inf"), float beta=float("inf"), bint maximizing_player=True,
-                 original_depth=None):
-        if original_depth is None:
-            original_depth = depth
+                int original_depth=-100):
         best_move = None
+        if original_depth == -100:
+            original_depth = depth
         cdef uint64_t zobrist_key = self.calculate_zobrist(board)
         if zobrist_key in self.zobrist_keys:  # If there is a transposition
             stored_eval, stored_depth, flag = self.zobrist_keys[zobrist_key]
@@ -60,29 +60,22 @@ class Search:
             self.bitboard.update_bitboards(board)
             bitboard_tables = self.bitboard.return_tables()
             eval = Eval(bitboard_tables, board)
-            evaluation = eval.eval()
-            if board.is_checkmate():
-                evaluation += (original_depth - depth) * 5
-            self.zobrist_keys[zobrist_key] = (evaluation, depth, 'exact')
-            return evaluation, best_move
-
-        if board.can_claim_threefold_repetition() or board.is_repetition():
-            evaluation = 0  # Draw by repetition
+            evaluation = eval.eval(depth, original_depth)
             self.zobrist_keys[zobrist_key] = (evaluation, depth, 'exact')
             return evaluation, best_move
 
         moves = list(board.legal_moves)
-        moves.sort(key=lambda move: not board.is_capture(move))
-
+        moves.sort(key=lambda move: not board.is_capture(move))  # Check captures secondly
+        moves.sort(key=lambda move: not board.gives_check(move))  # Check checks first
         if maximizing_player:
             max_eval = float("-inf")
             for move in moves:
                 new_board = board.copy()
                 new_board.push(move)
                 self.bitboard.update_bitboards(new_board)
-                evaluation, _ = self.minimax(new_board, depth - 1, alpha, beta, False)
+                evaluation, _ = self.minimax(new_board, depth - 1, alpha, beta, False, original_depth)
                 if new_board.is_check():
-                    evaluation += 0.2
+                    evaluation += 0.1
                 if evaluation > max_eval:
                     max_eval = evaluation
                     best_move = move
@@ -98,9 +91,9 @@ class Search:
                 new_board = board.copy()
                 new_board.push(move)
                 self.bitboard.update_bitboards(new_board)
-                evaluation, _ = self.minimax(new_board, depth - 1, alpha, beta, True)
+                evaluation, _ = self.minimax(new_board, depth - 1, alpha, beta, True, original_depth)
                 if new_board.is_check():
-                    evaluation -= 0.2
+                    evaluation -= 0.1
                 if evaluation < min_eval:
                     min_eval = evaluation
                     best_move = move
