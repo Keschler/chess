@@ -14,10 +14,10 @@ cdef show_board(chess_board):
 
 cpdef main():
     chess_board = chess.Board()
-    chess_board.set_fen("8/1k6/pppp3p/8/8/PPP5/K7/8 w - - 0 1")
+    chess_board.set_fen("rnbqrbk1/pp3ppp/2p1pn2/3p4/3P1B2/1NP1PN2/PP1K1PPP/R2Q1B1R w - - 4 9")
     search = Search()
     while True:
-        evaluation, best_move = search.minimax(chess_board, 10)
+        evaluation, best_move = search.minimax(chess_board, 4)
         print("Evaluation", evaluation, chess_board.fen())
         chess_board.push(best_move)
         if chess_board.is_checkmate():
