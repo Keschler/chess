@@ -39,7 +39,7 @@ class Search:
             zobrist_key ^= self.zobrist_en_passant_file[ep_rank]
         return zobrist_key
     def minimax(self, board, int depth, float alpha=float("-inf"), float beta=float("inf"), bint maximizing_player=True,
-                int original_depth=-100):
+                int original_depth=-100, move=None):
         best_move = None
         if original_depth == -100:
             original_depth = depth
@@ -63,10 +63,12 @@ class Search:
             evaluation = eval.eval(depth, original_depth)
             self.zobrist_keys[zobrist_key] = (evaluation, depth, 'exact')
             return evaluation, best_move
-
-        moves = list(board.legal_moves)
-        moves.sort(key=lambda move: not board.is_capture(move))  # Check captures secondly
-        moves.sort(key=lambda move: not board.gives_check(move))  # Check checks first
+        if move is not None:
+            moves = [move]
+        else:
+            moves = list(board.legal_moves)
+            moves.sort(key=lambda move: not board.is_capture(move))  # Check captures secondly
+            moves.sort(key=lambda move: not board.gives_check(move))  # Check checks first
         if maximizing_player:
             max_eval = float("-inf")
             for move in moves:
@@ -103,3 +105,4 @@ class Search:
             flag = 'exact' if min_eval < beta else 'upperbound'
             self.zobrist_keys[zobrist_key] = (min_eval, depth, flag)
             return min_eval, best_move
+

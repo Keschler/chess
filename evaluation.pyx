@@ -55,12 +55,9 @@ class Eval:
         cdef float multiplication = (chess.popcount(self.board.occupied) / 32)
         for square_index in range(64):
             if self.b_w_king & (1 << square_index):
-                print(self.WHITE_KING_SAFETY_TABLE[square_index])
                 bonus += self.WHITE_KING_SAFETY_TABLE[square_index]
             elif self.b_b_king & (1 << square_index):
-                print(self.BLACK_KING_SAFETY_TABLE[square_index])
                 bonus += self.BLACK_KING_SAFETY_TABLE[square_index]
-        print(bonus, self.board.fen())
         return bonus
     def rook_mobility_bonus(self, rooks):
         cdef float bonus = 0
@@ -173,7 +170,6 @@ class Eval:
                 return -1000 + abs((depth - original_depth))
         if (self.board.can_claim_threefold_repetition() or self.board.is_repetition() or self.board.is_variant_draw()
                 or self.board.is_stalemate()):
-            print("draw", self.board)
             return 0
 
         # Define piece values
@@ -218,6 +214,6 @@ class Eval:
         # Final evaluation score
         cdef float total_score = white_material - black_material + king_corner_bonus + mobility_bonus + passed_pawns_bonus
         #print(
-            #"Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
-            #king_corner_bonus, passed_pawns_bonus)
+        #    "Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
+        #    king_corner_bonus, passed_pawns_bonus)
         return total_score

@@ -33,3 +33,5 @@ class Bitboards:
     def return_tables(self):
         return (self.b_w_knight, self.b_w_king, self.b_w_bishop, self.b_w_queen, self.b_w_rook, self.b_w_pawn,
                 self.b_b_bishop, self.b_b_queen, self.b_b_rook, self.b_b_knight, self.b_b_king, self.b_b_pawn)
+
+
