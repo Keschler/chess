@@ -1,7 +1,10 @@
 import chess
 
-from constants import get_knight_table, get_white_pawn_table, get_king_endgame_table, get_black_pawn_table, \
-    get_king_endgame_checkmate_table, get_passed_pawn_bonuses, get_king_safety_table
+from constants import (
+    get_knight_table, get_white_pawn_table, get_king_endgame_table,
+    get_black_pawn_table, get_king_endgame_checkmate_table,
+    get_passed_pawn_bonuses, get_king_safety_table
+)
 
 ctypedef unsigned long ulong
 
@@ -9,13 +12,26 @@ ctypedef unsigned long ulong
 class Eval:
     def __init__(self, bitboard_tables, board=None):
         self.board = board
-        self.b_w_knight, self.b_w_king, self.b_w_bishop, self.b_w_queen, self.b_w_rook, self.b_w_pawn, self.b_b_bishop, self.b_b_queen, self.b_b_rook, self.b_b_knight, self.b_b_king, self.b_b_pawn = bitboard_tables
-        self.KNIGHT_TABLE, self.WHITE_PAWN_TABLE, self.KING_ENDGAME_CHECKMATE_TABLE, self.KING_ENDGAME_TABLE, self.BLACK_PAWN_TABLE = get_knight_table(), get_white_pawn_table(), get_king_endgame_checkmate_table(), get_king_endgame_table(), get_black_pawn_table()
+        (
+            self.b_w_knight, self.b_w_king, self.b_w_bishop,
+            self.b_w_queen, self.b_w_rook, self.b_w_pawn,
+            self.b_b_bishop, self.b_b_queen, self.b_b_rook,
+            self.b_b_knight, self.b_b_king, self.b_b_pawn
+        ) = bitboard_tables
+
+        self.KNIGHT_TABLE = get_knight_table()
+        self.WHITE_PAWN_TABLE = get_white_pawn_table()
+        self.KING_ENDGAME_CHECKMATE_TABLE = get_king_endgame_checkmate_table()
+        self.KING_ENDGAME_TABLE = get_king_endgame_table()
+        self.BLACK_PAWN_TABLE = get_black_pawn_table()
         self.passes_pawn_bonuses = get_passed_pawn_bonuses()
         self.WHITE_KING_SAFETY_TABLE, self.BLACK_KING_SAFETY_TABLE = get_king_safety_table()
+
     def only_pawns_and_kings_left(self):
-        pieces = [self.b_b_queen, self.b_b_knight, self.b_b_bishop, self.b_b_rook, self.b_w_bishop, self.b_w_knight,
-                  self.b_w_rook, self.b_w_queen]
+        pieces = [
+            self.b_b_queen, self.b_b_knight, self.b_b_bishop, self.b_b_rook,
+            self.b_w_bishop, self.b_w_knight, self.b_w_rook, self.b_w_queen
+        ]
         return all(piece == chess.BB_EMPTY for piece in pieces)
 
     def distance_between_kings(self):
@@ -28,8 +44,7 @@ class Eval:
         cdef int dst_between_kings = file_dst + rank_dst
         return dst_between_kings
 
-    def force_king_into_corner(self,
-                               pre_score):  # Incentivize forcing the enemy king into corner and using his own king
+    def force_king_into_corner(self, pre_score):
         cdef int evaluation = 0
         cdef float multiplication = ((32 - chess.popcount(self.board.occupied)) / 100) / 2
         if self.only_pawns_and_kings_left() or -2 <= pre_score <= 2:
@@ -42,7 +57,7 @@ class Eval:
         return evaluation * multiplication
 
     def get_king_into_center(self):
-        cdef int bonus
+        cdef int bonus = 0
         if self.only_pawns_and_kings_left():
             for square_index in range(64):
                 if self.b_b_king & (1 << square_index):
@@ -50,6 +65,7 @@ class Eval:
                 elif self.b_w_king & (1 << square_index):
                     bonus += self.KING_ENDGAME_TABLE[square_index]
         return bonus
+
     def king_safety(self):
         cdef int bonus = 0
         cdef float multiplication = (chess.popcount(self.board.occupied) / 32)
@@ -59,6 +75,7 @@ class Eval:
             elif self.b_b_king & (1 << square_index):
                 bonus += self.BLACK_KING_SAFETY_TABLE[square_index]
         return bonus
+
     def rook_mobility_bonus(self, rooks):
         cdef float bonus = 0
         cdef int direction
@@ -88,6 +105,7 @@ class Eval:
                     if 0 <= target_square < 64 and self.board.piece_at(target_square) is None:
                         bonus += 0.2
         return bonus
+
     def mobility_bonus(self):
         cdef float bonus = 0
         cdef list black_bishops = []
@@ -106,6 +124,7 @@ class Eval:
         bonus += self.bishop_mobility_bonus(white_bishops) - self.bishop_mobility_bonus(black_bishops)
         bonus += self.rook_mobility_bonus(white_rooks) - self.rook_mobility_bonus(black_rooks)
         return bonus
+
     def passed_pawn_mask(self):
         cdef list passed_pawns_white = []
         cdef list passed_pawns_black = []
@@ -146,6 +165,7 @@ class Eval:
                 passed_pawn_mask = forward_mask & triple_file_mask  # Get all the squares in front, 1 left and 1 right of the pawn
                 passed_pawns_masks_black.append(passed_pawn_mask)
         return passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black, passed_pawns_white
+
     def passed_pawns(self):
         cdef float bonus = 0
         passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black, passed_pawns_white = self.passed_pawn_mask()
@@ -180,20 +200,21 @@ class Eval:
         cdef int queen_value = 9
 
         # Calculate material balance
-        white_material = (
+        cdef float white_material = (
                 pawn_value * chess.popcount(self.b_w_pawn) +
                 knight_value * chess.popcount(self.b_w_knight) +
                 bishop_value * chess.popcount(self.b_w_bishop) +
                 rook_value * chess.popcount(self.b_w_rook) +
                 queen_value * chess.popcount(self.b_w_queen)
         )
-        black_material = (
+        cdef float black_material = (
                 pawn_value * chess.popcount(self.b_b_pawn) +
                 knight_value * chess.popcount(self.b_b_knight) +
                 bishop_value * chess.popcount(self.b_b_bishop) +
                 rook_value * chess.popcount(self.b_b_rook) +
                 queen_value * chess.popcount(self.b_b_queen)
         )
+
         # Positional evaluation using piece-square tables
         for square_index in range(64):
             if self.b_w_knight & (1 << square_index):
@@ -204,6 +225,7 @@ class Eval:
                 black_material += self.KNIGHT_TABLE[square_index]
             if self.b_b_pawn & (1 << square_index):
                 black_material += self.BLACK_PAWN_TABLE[square_index]
+
         # Additional bonuses
         white_material += self.get_king_into_center()
         black_material += self.get_king_into_center()
@@ -211,9 +233,8 @@ class Eval:
         cdef float mobility_bonus = self.mobility_bonus()
         cdef float passed_pawns_bonus = self.passed_pawns()
         cdef float king_safety = self.king_safety()
+
         # Final evaluation score
         cdef float total_score = white_material - black_material + king_corner_bonus + mobility_bonus + passed_pawns_bonus
-        #print(
-        #    "Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
-        #    king_corner_bonus, passed_pawns_bonus)
+        #print("Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus, king_corner_bonus, passed_pawns_bonus)
         return total_score

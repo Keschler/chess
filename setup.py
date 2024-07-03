@@ -6,6 +6,7 @@ extensions = [
     Extension("evaluation", ["evaluation.pyx"]),
     Extension("search", ["search.pyx"]),
     Extension("main", ["main.pyx"]),
+    Extension("bitboards", ["bitboards.pyx"])
 ]
 
 setup(

@@ -1,7 +1,10 @@
 import chess
+from libc.stdint cimport uint64_t
 
+cdef class Bitboards:
+    cdef public uint64_t b_w_knight, b_w_king, b_w_bishop, b_w_queen, b_w_rook, b_w_pawn
+    cdef public uint64_t b_b_bishop, b_b_queen, b_b_rook, b_b_knight, b_b_king, b_b_pawn
 
-class Bitboards:
     def __init__(self):
         self.b_w_knight = chess.BB_EMPTY
         self.b_w_king = chess.BB_EMPTY
@@ -16,7 +19,7 @@ class Bitboards:
         self.b_b_king = chess.BB_EMPTY
         self.b_b_pawn = chess.BB_EMPTY
 
-    def update_bitboards(self, board):
+    cpdef void update_bitboards(self, board):
         self.b_w_knight = int(board.pieces(chess.KNIGHT, chess.WHITE))
         self.b_w_king = int(board.pieces(chess.KING, chess.WHITE))
         self.b_w_bishop = int(board.pieces(chess.BISHOP, chess.WHITE))
@@ -30,8 +33,6 @@ class Bitboards:
         self.b_b_king = int(board.pieces(chess.KING, chess.BLACK))
         self.b_b_pawn = int(board.pieces(chess.PAWN, chess.BLACK))
 
-    def return_tables(self):
+    cpdef tuple return_tables(self):
         return (self.b_w_knight, self.b_w_king, self.b_w_bishop, self.b_w_queen, self.b_w_rook, self.b_w_pawn,
                 self.b_b_bishop, self.b_b_queen, self.b_b_rook, self.b_b_knight, self.b_b_king, self.b_b_pawn)
-
-

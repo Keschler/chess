@@ -2,14 +2,14 @@ from multiprocessing import Pool, cpu_count
 import chess
 import chess.svg
 from search import Search
+from time import time
 
-
-cpdef show_board(chess_board):
+cdef void show_board(chess_board):
     svg = chess.svg.board(chess_board)
     with open('chessboard.svg', 'w') as f:
         f.write(svg)
 
-cpdef evaluate_move(board_fen_move_depth):
+cpdef tuple evaluate_move(board_fen_move_depth):
     board_fen, move, depth = board_fen_move_depth
     board = chess.Board(board_fen)
     search = Search()
@@ -17,12 +17,13 @@ cpdef evaluate_move(board_fen_move_depth):
     return evaluation, move
 
 def main():
+    cdef str current_move
+    cdef list moves
     chess_board = chess.Board()
     #chess_board.set_fen("8/k7/3p4/p2P1p2/P2P1P2/8/8/K7 w - - 0 1")
-    depth = 4
+    cdef int depth = 5
 
     while True:
-        print(chess.popcount(chess_board.occupied))
         if chess.popcount(chess_board.occupied) < 10:
             depth += 1
         if chess.popcount(chess_board.occupied) < 5:
@@ -32,12 +33,13 @@ def main():
         moves = list(chess_board.legal_moves)
         board_fen = chess_board.fen()  # Use FEN string to avoid copying the entire board object
         board_move_depths = [(board_fen, move, depth) for move in moves]
-
+        start = time()
         # Evaluate moves in parallel
         with Pool(processes=cpu_count()) as pool:
             results = pool.map(evaluate_move, board_move_depths)
         best_evaluation, best_move = max(results, key=lambda x: x[0])
-        print("Evaluation", best_evaluation, chess_board.fen(), results)
+        end = time()
+        print("Evaluation", best_evaluation, chess_board.fen(), results, end - start)
         chess_board.push(best_move)
 
         if chess_board.is_checkmate():

@@ -7,10 +7,15 @@ from evaluation import Eval
 from libc.stdint cimport uint64_t
 
 
-class Search:
+cdef class Search:
+    cdef object bitboard
+    cdef uint64_t zobrist_black_to_move
+    cdef dict zobrist_piece_keys
+    cdef list zobrist_castling_rights
+    cdef list zobrist_en_passant_file
+    cdef dict zobrist_keys
     def __init__(self):  # For transposition tables
         self.bitboard = Bitboards()
-        self.zobrist_black_to_move = None
         random.seed(42)
         self.zobrist_piece_keys = {(piece_color, piece_index, square_index): random.getrandbits(64)
                                    for piece_color in [True, False]
@@ -21,8 +26,10 @@ class Search:
         self.zobrist_en_passant_file = [random.getrandbits(64) for _ in range(8)]
         self.zobrist_keys = {}
 
-    def calculate_zobrist(self, board):
+    cdef uint64_t calculate_zobrist(self, board):
         cdef uint64_t zobrist_key = 0
+        cdef int ep_rank
+        cdef bint piece_color
         for square_index in range(64):
             piece = board.piece_at(square_index)
             if piece is not None:  # If the square is not empty
@@ -38,8 +45,21 @@ class Search:
             ep_rank = chess.square_file(board.ep_square)
             zobrist_key ^= self.zobrist_en_passant_file[ep_rank]
         return zobrist_key
-    def minimax(self, board, int depth, float alpha=float("-inf"), float beta=float("inf"), bint maximizing_player=True,
+    cdef list sort_by_capture(self, moves, board):
+        sorted_moves = moves
+        for count, move in enumerate(moves):
+            if board.is_capture(move):
+                sorted_moves.insert(0, sorted_moves.pop(count))
+        return sorted_moves
+    cdef list sort_by_check(self, moves, board):
+        sorted_moves = moves
+        for count, move in enumerate(moves):
+            if board.gives_check(move):
+                sorted_moves.insert(0, sorted_moves.pop(count))
+        return sorted_moves
+    cpdef minimax(self, board, int depth, float alpha=float("-inf"), float beta=float("inf"), bint maximizing_player=True,
                 int original_depth=-100, move=None):
+        cdef float evaluation
         best_move = None
         if original_depth == -100:
             original_depth = depth
@@ -67,8 +87,8 @@ class Search:
             moves = [move]
         else:
             moves = list(board.legal_moves)
-            moves.sort(key=lambda move: not board.is_capture(move))  # Check captures secondly
-            moves.sort(key=lambda move: not board.gives_check(move))  # Check checks first
+            moves = self.sort_by_capture(moves, board)
+            moves = self.sort_by_check(moves, board)
         if maximizing_player:
             max_eval = float("-inf")
             for move in moves:
