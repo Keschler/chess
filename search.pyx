@@ -8,12 +8,13 @@ from libc.stdint cimport uint64_t
 
 
 cdef class Search:
-    cdef object bitboard
-    cdef uint64_t zobrist_black_to_move
-    cdef dict zobrist_piece_keys
-    cdef list zobrist_castling_rights
-    cdef list zobrist_en_passant_file
-    cdef dict zobrist_keys
+    cdef:
+        object bitboard
+        uint64_t zobrist_black_to_move
+        dict zobrist_piece_keys
+        list zobrist_castling_rights
+        list zobrist_en_passant_file
+        dict zobrist_keys
     def __init__(self):  # For transposition tables
         self.bitboard = Bitboards()
         random.seed(42)

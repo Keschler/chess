@@ -1,3 +1,4 @@
+# cython: profile=True
 from multiprocessing import Pool, cpu_count
 import chess
 import chess.svg
@@ -20,8 +21,9 @@ def main():
     cdef str current_move
     cdef list moves
     chess_board = chess.Board()
-    #chess_board.set_fen("8/k7/3p4/p2P1p2/P2P1P2/8/8/K7 w - - 0 1")
-    cdef int depth = 5
+    chess_board.set_fen("1kr5/ppp1pppp/8/8/8/8/PPP1PPPP/1KR5 w - - 0 1")
+    cdef int depth = 4
+    print(chess.popcount(chess_board.occupied))
 
     while True:
         if chess.popcount(chess_board.occupied) < 10:
