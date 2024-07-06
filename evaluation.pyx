@@ -139,6 +139,8 @@ cdef class Eval:
         cdef list passed_pawns_black = []
         cdef list passed_pawns_masks_white = []
         cdef list passed_pawns_masks_black = []
+        cdef list isolated_pawns_white = []
+        cdef list isolated_pawns_black = []
         cdef ulong file_A = 0x0101010101010101
         cdef int rank_index
         cdef ulong file_mask
@@ -154,6 +156,8 @@ cdef class Eval:
                 file_mask_left = file_A << max(0, file_index - 1)
                 file_mask_right = file_A << min(7, file_index + 1)
                 triple_file_mask = file_mask | file_mask_left | file_mask_right
+                adjacent_file_mask = file_mask_left | file_mask_right
+                isolated_pawns_white.append(adjacent_file_mask)
 
                 rank_index = chess.square_rank(square_index)
                 forward_mask = 0xFFFFFFFFFFFFFFFF << 8 * (rank_index + 1)
@@ -167,31 +171,39 @@ cdef class Eval:
                 file_mask_left = file_A << max(0, file_index - 1)
                 file_mask_right = file_A << min(7, file_index + 1)
                 triple_file_mask = file_mask | file_mask_left | file_mask_right  # Get the files next to the pawn and the file the pawn is on
+                adjacent_file_mask = file_mask_left | file_mask_right
+                isolated_pawns_black.append(adjacent_file_mask)
 
                 rank_index = chess.square_rank(square_index)
                 forward_mask = 0xFFFFFFFFFFFFFFFF << 8 * (7 - rank_index)
 
                 passed_pawn_mask = forward_mask & triple_file_mask  # Get all the squares in front, 1 left and 1 right of the pawn
                 passed_pawns_masks_black.append(passed_pawn_mask)
-        return passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black, passed_pawns_white
+        return passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black, passed_pawns_white, isolated_pawns_black, isolated_pawns_white
 
-    cdef float passed_pawns(self):
+    cdef float pawns(self):
         cdef float bonus = 0
-        passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black, passed_pawns_white = self.passed_pawn_mask()
+        cdef int num_isolated_pawns = 0
+        (passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black,
+         passed_pawns_white, isolated_pawns_black, isolated_pawns_white) = self.passed_pawn_mask()
         for i in range(len(passed_pawns_white)):
-            if (self.b_b_pawn & passed_pawns_masks_white[i]) == 0:  # If it's a passed pawn
+            if (self.b_b_pawn & passed_pawns_masks_white[i]) == 0:  # If it's a passed white pawn
                 rank = chess.square_rank(passed_pawns_white[i])
                 num_squares_from_promotion = 7 - rank
                 bonus += self.passes_pawn_bonuses[num_squares_from_promotion]
+            if (self.b_w_pawn & isolated_pawns_white[i]) == 0: # If it's an isolated pawn
+                num_isolated_pawns+=1
         for k in range(len(passed_pawns_black)):
-            if (self.b_w_pawn & passed_pawns_masks_black[k]) == 0:  # If it's a passed pawn
+            if (self.b_w_pawn & passed_pawns_masks_black[k]) == 0:  # If it's a passed black pawn
                 rank = chess.square_rank(passed_pawns_black[k])
                 num_squares_from_promotion = rank
                 bonus -= self.passes_pawn_bonuses[num_squares_from_promotion]
+            if (self.b_b_pawn & isolated_pawns_black[k]) == 0: # If it's an isolated pawn
+                num_isolated_pawns-=1
+        bonus=(num_isolated_pawns * 0.3) * -1
         return bonus
 
     cpdef float eval(self, depth, original_depth):
-        # Checkmate and draw conditions
         if self.board.is_checkmate():
             if self.board.turn == chess.BLACK:  # If white checkmates
                 return 1000 - abs((depth - original_depth))
@@ -240,7 +252,7 @@ cdef class Eval:
         black_material += self.get_king_into_center()
         cdef float king_corner_bonus = self.force_king_into_corner(white_material - black_material)
         cdef float mobility_bonus = self.mobility_bonus()
-        cdef float passed_pawns_bonus = self.passed_pawns()
+        cdef float passed_pawns_bonus = self.pawns()
         cdef float king_safety = self.king_safety()
 
         # Final evaluation score
