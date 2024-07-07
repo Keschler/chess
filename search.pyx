@@ -31,6 +31,7 @@ cdef class Search:
         cdef uint64_t zobrist_key = 0
         cdef int ep_rank
         cdef bint piece_color
+        cdef int piece_type
         for square_index in range(64):
             piece = board.piece_at(square_index)
             if piece is not None:  # If the square is not empty
@@ -58,7 +59,7 @@ cdef class Search:
             if board.gives_check(move):
                 sorted_moves.insert(0, sorted_moves.pop(count))
         return sorted_moves
-    cpdef minimax(self, board, int depth, float alpha=float("-inf"), float beta=float("inf"), bint maximizing_player=True,
+    cpdef minimax(self, object board, int depth, float alpha=float("-inf"), float beta=float("inf"), bint maximizing_player=True,
                 int original_depth=-100, move=None):
         cdef float evaluation
         best_move = None
@@ -80,8 +81,8 @@ cdef class Search:
         if depth == 0 or board.is_game_over():
             self.bitboard.update_bitboards(board)
             bitboard_tables = self.bitboard.return_tables()
-            eval = Eval(bitboard_tables, board)
-            evaluation = eval.eval(depth, original_depth)
+            curr_eval = Eval(bitboard_tables, board)
+            evaluation = curr_eval.eval(depth, original_depth)
             self.zobrist_keys[zobrist_key] = (evaluation, depth, 'exact')
             return evaluation, best_move
         if move is not None:

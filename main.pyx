@@ -21,9 +21,8 @@ def main():
     cdef str current_move
     cdef list moves
     chess_board = chess.Board()
-    chess_board.set_fen("1k6/ppp2pp1/8/8/8/8/1PP1PPP1/1K6 w - - 0 1")
+    #chess_board.set_fen("5bk1/4pp1b/6p1/8/8/1B3P2/1B3PP1/1K6 w - - 0 1")
     cdef int depth = 4
-    print(chess.popcount(chess_board.occupied))
 
     while True:
         if chess.popcount(chess_board.occupied) < 10:

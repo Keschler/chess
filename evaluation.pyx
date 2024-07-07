@@ -1,11 +1,11 @@
 import chess
+from libc.stdint cimport uint64_t
 
 from constants import (
     get_knight_table, get_white_pawn_table, get_king_endgame_table,
     get_black_pawn_table, get_king_endgame_checkmate_table,
     get_passed_pawn_bonuses, get_king_safety_table
 )
-from libc.stdint cimport uint64_t
 
 ctypedef unsigned long ulong
 
@@ -17,7 +17,7 @@ cdef class Eval:
         uint64_t b_w_knight, b_w_king, b_w_bishop, b_w_queen, b_w_rook, b_w_pawn, b_b_bishop, b_b_queen, b_b_rook, b_b_knight, b_b_king, b_b_pawn
 
 
-    def __init__(self, bitboard_tables, board=None):
+    def __init__(self, tuple bitboard_tables, object board=None):
         self.board = board
         (
             self.b_w_knight, self.b_w_king, self.b_w_bishop,
@@ -51,8 +51,8 @@ cdef class Eval:
         cdef int dst_between_kings = file_dst + rank_dst
         return dst_between_kings
 
-    cdef float force_king_into_corner(self, pre_score):
-        cdef int evaluation = 0
+    cdef float force_king_into_corner(self, float pre_score):
+        cdef float evaluation = 0
         cdef float multiplication = ((32 - chess.popcount(self.board.occupied)) / 100) / 2
         if self.only_pawns_and_kings_left() or -2 <= pre_score <= 2:
             multiplication = 0
@@ -83,7 +83,7 @@ cdef class Eval:
                 bonus += self.BLACK_KING_SAFETY_TABLE[square_index]
         return bonus
 
-    cdef float rook_mobility_bonus(self, rooks):
+    cdef float rook_mobility_bonus(self, list rooks):
         cdef float bonus = 0
         cdef int direction
         cdef int distance
@@ -94,13 +94,14 @@ cdef class Eval:
             for direction in [-8, -1, 8, 1]:
                 for distance in range(1, 8):
                     target_square = rook + (direction * distance)
-                    if (0 <= target_square < 64 and self.board.piece_at(target_square) is None) and (
-                            chess.square_rank(target_square) == rook or chess.square_file(
-                        target_square) == rook):  #Check if `target_square` is within the valid range (0-63), is empty, and is either in the same rank or file as the `rook`.
+                    if ((0 <= target_square < 64 and self.board.piece_at(
+                            target_square) is None) and  # Checks if the target square is valid, empty, and aligns with the rook's movement path (same rank or file).
+                            ((chess.square_rank(target_square) == chess.square_rank(rook)) or (
+                                    chess.square_file(target_square) == chess.square_file(rook)))):
                         bonus += 0.2
         return bonus
 
-    cdef float bishop_mobility_bonus(self, bishops):
+    cdef float bishop_mobility_bonus(self, list bishops):
         cdef float bonus = 0
         cdef int direction
         cdef int distance
@@ -111,8 +112,16 @@ cdef class Eval:
             for direction in [-9, -7, 7, 9]:
                 for distance in range(1, 8):
                     target_square = bishop + (direction * distance)
-                    if 0 <= target_square < 64 and self.board.piece_at(target_square) is None:
-                        bonus += 0.2
+                    if not (0 <= target_square < 64):  # If the square is not on the board
+                        break
+                    # Ensure target_square is on the same diagonal
+                    # % 8 == file
+                    # // 8 == rank
+                    if abs(target_square % 8 - bishop % 8) != abs(target_square // 8 - bishop // 8):
+                        break
+                    if self.board.piece_at(target_square) is not None:  # If there is a piece on the square
+                        break
+                    bonus += 0.2
         return bonus
 
     cdef float mobility_bonus(self):
@@ -133,7 +142,14 @@ cdef class Eval:
         bonus += self.bishop_mobility_bonus(white_bishops) - self.bishop_mobility_bonus(black_bishops)
         bonus += self.rook_mobility_bonus(white_rooks) - self.rook_mobility_bonus(black_rooks)
         return bonus
-
+    cdef tuple file_mask(self, int square_index, ulong file_a):
+        file_index = chess.square_file(square_index)
+        file_mask = file_a << file_index
+        file_mask_left = file_a << max(0, file_index - 1)
+        file_mask_right = file_a << min(7, file_index + 1)
+        triple_file_mask = file_mask | file_mask_left | file_mask_right
+        adjacent_file_mask = file_mask_left | file_mask_right
+        return triple_file_mask, adjacent_file_mask
     cdef tuple passed_pawn_mask(self):
         cdef list passed_pawns_white = []
         cdef list passed_pawns_black = []
@@ -151,27 +167,17 @@ cdef class Eval:
         for square_index in range(64):
             if self.b_w_pawn & (1 << square_index):
                 passed_pawns_white.append(square_index)
-                file_index = chess.square_file(square_index)
-                file_mask = file_A << file_index
-                file_mask_left = file_A << max(0, file_index - 1)
-                file_mask_right = file_A << min(7, file_index + 1)
-                triple_file_mask = file_mask | file_mask_left | file_mask_right
-                adjacent_file_mask = file_mask_left | file_mask_right
+                triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_A)
                 isolated_pawns_white.append(adjacent_file_mask)
 
                 rank_index = chess.square_rank(square_index)
                 forward_mask = 0xFFFFFFFFFFFFFFFF << 8 * (rank_index + 1)
 
-                passed_pawn_mask = forward_mask & triple_file_mask
+                passed_pawn_mask = forward_mask & triple_file_mask  # Get all the squares in front, 1 left and 1 right of the pawn
                 passed_pawns_masks_white.append(passed_pawn_mask)
             elif self.b_b_pawn & (1 << square_index):
                 passed_pawns_black.append(square_index)
-                file_index = chess.square_file(square_index)
-                file_mask = file_A << file_index
-                file_mask_left = file_A << max(0, file_index - 1)
-                file_mask_right = file_A << min(7, file_index + 1)
-                triple_file_mask = file_mask | file_mask_left | file_mask_right  # Get the files next to the pawn and the file the pawn is on
-                adjacent_file_mask = file_mask_left | file_mask_right
+                triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_A)
                 isolated_pawns_black.append(adjacent_file_mask)
 
                 rank_index = chess.square_rank(square_index)
@@ -191,19 +197,19 @@ cdef class Eval:
                 rank = chess.square_rank(passed_pawns_white[i])
                 num_squares_from_promotion = 7 - rank
                 bonus += self.passes_pawn_bonuses[num_squares_from_promotion]
-            if (self.b_w_pawn & isolated_pawns_white[i]) == 0: # If it's an isolated pawn
-                num_isolated_pawns+=1
+            if (self.b_w_pawn & isolated_pawns_white[i]) == 0:  # If it's an isolated pawn
+                num_isolated_pawns += 1
         for k in range(len(passed_pawns_black)):
             if (self.b_w_pawn & passed_pawns_masks_black[k]) == 0:  # If it's a passed black pawn
                 rank = chess.square_rank(passed_pawns_black[k])
                 num_squares_from_promotion = rank
                 bonus -= self.passes_pawn_bonuses[num_squares_from_promotion]
-            if (self.b_b_pawn & isolated_pawns_black[k]) == 0: # If it's an isolated pawn
-                num_isolated_pawns-=1
-        bonus=(num_isolated_pawns * 0.3) * -1
+            if (self.b_b_pawn & isolated_pawns_black[k]) == 0:  # If it's an isolated pawn
+                num_isolated_pawns -= 1
+        bonus = (num_isolated_pawns * 0.3) * -1
         return bonus
 
-    cpdef float eval(self, depth, original_depth):
+    cpdef float eval(self, int depth, int original_depth):
         if self.board.is_checkmate():
             if self.board.turn == chess.BLACK:  # If white checkmates
                 return 1000 - abs((depth - original_depth))
@@ -257,5 +263,7 @@ cdef class Eval:
 
         # Final evaluation score
         cdef float total_score = white_material - black_material + king_corner_bonus + mobility_bonus + passed_pawns_bonus
-        #print("Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus, king_corner_bonus, passed_pawns_bonus)
+        #print(
+            #"Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
+            #king_corner_bonus, passed_pawns_bonus)
         return total_score
