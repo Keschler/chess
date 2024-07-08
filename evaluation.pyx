@@ -149,7 +149,7 @@ cdef class Eval:
         file_mask_right = file_a << min(7, file_index + 1)
         triple_file_mask = file_mask | file_mask_left | file_mask_right
         adjacent_file_mask = file_mask_left | file_mask_right
-        return triple_file_mask, adjacent_file_mask
+        return file_mask, triple_file_mask, adjacent_file_mask
     cdef tuple passed_pawn_mask(self):
         cdef list passed_pawns_white = []
         cdef list passed_pawns_black = []
@@ -157,6 +157,8 @@ cdef class Eval:
         cdef list passed_pawns_masks_black = []
         cdef list isolated_pawns_white = []
         cdef list isolated_pawns_black = []
+        cdef list file_masks_white = []
+        cdef list file_masks_black = []
         cdef ulong file_A = 0x0101010101010101
         cdef int rank_index
         cdef ulong file_mask
@@ -167,8 +169,9 @@ cdef class Eval:
         for square_index in range(64):
             if self.b_w_pawn & (1 << square_index):
                 passed_pawns_white.append(square_index)
-                triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_A)
+                file_mask, triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_A)
                 isolated_pawns_white.append(adjacent_file_mask)
+                file_masks_white.append(file_mask)
 
                 rank_index = chess.square_rank(square_index)
                 forward_mask = 0xFFFFFFFFFFFFFFFF << 8 * (rank_index + 1)
@@ -177,21 +180,23 @@ cdef class Eval:
                 passed_pawns_masks_white.append(passed_pawn_mask)
             elif self.b_b_pawn & (1 << square_index):
                 passed_pawns_black.append(square_index)
-                triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_A)
+                file_mask, triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_A)
                 isolated_pawns_black.append(adjacent_file_mask)
+                file_masks_black.append(file_mask)
 
                 rank_index = chess.square_rank(square_index)
                 forward_mask = 0xFFFFFFFFFFFFFFFF << 8 * (7 - rank_index)
 
                 passed_pawn_mask = forward_mask & triple_file_mask  # Get all the squares in front, 1 left and 1 right of the pawn
                 passed_pawns_masks_black.append(passed_pawn_mask)
-        return passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black, passed_pawns_white, isolated_pawns_black, isolated_pawns_white
+        return passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black, passed_pawns_white, isolated_pawns_black, isolated_pawns_white, file_masks_white, file_masks_black
 
     cdef float pawns(self):
         cdef float bonus = 0
         cdef int num_isolated_pawns = 0
+        cdef int num_doubled_pawns = 0
         (passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black,
-         passed_pawns_white, isolated_pawns_black, isolated_pawns_white) = self.passed_pawn_mask()
+         passed_pawns_white, isolated_pawns_black, isolated_pawns_white, file_masks_white, file_mask_black) = self.passed_pawn_mask()
         for i in range(len(passed_pawns_white)):
             if (self.b_b_pawn & passed_pawns_masks_white[i]) == 0:  # If it's a passed white pawn
                 rank = chess.square_rank(passed_pawns_white[i])
@@ -199,6 +204,9 @@ cdef class Eval:
                 bonus += self.passes_pawn_bonuses[num_squares_from_promotion]
             if (self.b_w_pawn & isolated_pawns_white[i]) == 0:  # If it's an isolated pawn
                 num_isolated_pawns += 1
+            pawns_on_file = self.b_w_pawn & file_masks_white[i]
+            if bin(pawns_on_file).count('1') > 1: # If it's a doubled pawn
+                num_doubled_pawns += 1
         for k in range(len(passed_pawns_black)):
             if (self.b_w_pawn & passed_pawns_masks_black[k]) == 0:  # If it's a passed black pawn
                 rank = chess.square_rank(passed_pawns_black[k])
@@ -206,7 +214,11 @@ cdef class Eval:
                 bonus -= self.passes_pawn_bonuses[num_squares_from_promotion]
             if (self.b_b_pawn & isolated_pawns_black[k]) == 0:  # If it's an isolated pawn
                 num_isolated_pawns -= 1
+            pawns_on_file = self.b_w_pawn & file_mask_black[k]
+            if bin(pawns_on_file).count('1') > 1: # If it's a doubled pawn
+                num_doubled_pawns -= 1
         bonus = (num_isolated_pawns * 0.3) * -1
+        bonus = (num_doubled_pawns * 0.3) * -1
         return bonus
 
     cpdef float eval(self, int depth, int original_depth):

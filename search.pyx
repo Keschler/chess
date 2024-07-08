@@ -27,7 +27,7 @@ cdef class Search:
         self.zobrist_en_passant_file = [random.getrandbits(64) for _ in range(8)]
         self.zobrist_keys = {}
 
-    cdef uint64_t calculate_zobrist(self, board):
+    cdef uint64_t calculate_zobrist(self, object board):
         cdef uint64_t zobrist_key = 0
         cdef int ep_rank
         cdef bint piece_color
@@ -47,13 +47,13 @@ cdef class Search:
             ep_rank = chess.square_file(board.ep_square)
             zobrist_key ^= self.zobrist_en_passant_file[ep_rank]
         return zobrist_key
-    cdef list sort_by_capture(self, moves, board):
+    cdef list sort_by_capture(self, list moves, object board):
         sorted_moves = moves
         for count, move in enumerate(moves):
             if board.is_capture(move):
                 sorted_moves.insert(0, sorted_moves.pop(count))
         return sorted_moves
-    cdef list sort_by_check(self, moves, board):
+    cdef list sort_by_check(self, list moves, object board):
         sorted_moves = moves
         for count, move in enumerate(moves):
             if board.gives_check(move):
@@ -62,6 +62,7 @@ cdef class Search:
     cpdef minimax(self, object board, int depth, float alpha=float("-inf"), float beta=float("inf"), bint maximizing_player=True,
                 int original_depth=-100, move=None):
         cdef float evaluation
+        cdef list moves
         best_move = None
         if original_depth == -100:
             original_depth = depth
