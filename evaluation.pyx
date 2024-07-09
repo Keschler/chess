@@ -74,14 +74,14 @@ cdef class Eval:
         return bonus
 
     cdef float king_safety(self):
-        cdef int bonus = 0
+        cdef float bonus = 0
         cdef float multiplication = (chess.popcount(self.board.occupied) / 32)
         for square_index in range(64):
             if self.b_w_king & (1 << square_index):
                 bonus += self.WHITE_KING_SAFETY_TABLE[square_index]
             elif self.b_b_king & (1 << square_index):
-                bonus += self.BLACK_KING_SAFETY_TABLE[square_index]
-        return bonus
+                bonus -= self.BLACK_KING_SAFETY_TABLE[square_index]
+        return bonus*multiplication
 
     cdef float rook_mobility_bonus(self, list rooks):
         cdef float bonus = 0
@@ -98,7 +98,7 @@ cdef class Eval:
                             target_square) is None) and  # Checks if the target square is valid, empty, and aligns with the rook's movement path (same rank or file).
                             ((chess.square_rank(target_square) == chess.square_rank(rook)) or (
                                     chess.square_file(target_square) == chess.square_file(rook)))):
-                        bonus += 0.2
+                        bonus += 0.1
         return bonus
 
     cdef float bishop_mobility_bonus(self, list bishops):
@@ -121,7 +121,7 @@ cdef class Eval:
                         break
                     if self.board.piece_at(target_square) is not None:  # If there is a piece on the square
                         break
-                    bonus += 0.2
+                    bonus += 0.1
         return bonus
 
     cdef float mobility_bonus(self):
@@ -270,12 +270,12 @@ cdef class Eval:
         black_material += self.get_king_into_center()
         cdef float king_corner_bonus = self.force_king_into_corner(white_material - black_material)
         cdef float mobility_bonus = self.mobility_bonus()
-        cdef float passed_pawns_bonus = self.pawns()
+        cdef float pawns_bonus = self.pawns()
         cdef float king_safety = self.king_safety()
 
         # Final evaluation score
-        cdef float total_score = white_material - black_material + king_corner_bonus + mobility_bonus + passed_pawns_bonus
-        #print(
-            #"Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
-            #king_corner_bonus, passed_pawns_bonus)
+        cdef float total_score = white_material - black_material + king_corner_bonus +  mobility_bonus + pawns_bonus + king_safety
+        print(
+            "Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
+            king_corner_bonus, pawns_bonus, king_safety)
         return total_score

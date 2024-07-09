@@ -50,8 +50,8 @@ cdef list BLACK_KING_SAFETY_TABLE = [
     -5, -5, -5, -5, -5, -5, -5, -5,
     -2, -2, -2, -2, -2, -2, -2, -2,
     -1, -1, -1, -1, -1, -1, -1, -1,
-    0.4, 0.4, -0.1, -0.5, -0.3, -0.1, 0.4, 0.4,
-    0.5, 0.4, 0.3, 0, 0, 0.3, 0.4, 0.5,
+    0.3, 0.3, -0.1, -0.5, -0.3, -0.1, 0.3, 0.3,
+    0.6, 0.5, 0.2, 0, 0, 0.2, 0.5, 0.6,
 ]
 cdef list WHITE_KING_SAFETY_TABLE = list(reversed(BLACK_KING_SAFETY_TABLE))
 cpdef tuple get_king_safety_table():
