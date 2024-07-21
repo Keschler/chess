@@ -1,11 +1,10 @@
 import random
-
+import time
 import chess
 
 from bitboards import Bitboards
 from evaluation import Eval
 from libc.stdint cimport uint64_t
-
 
 cdef class Search:
     cdef:
@@ -59,8 +58,32 @@ cdef class Search:
             if board.gives_check(move):
                 sorted_moves.insert(0, sorted_moves.pop(count))
         return sorted_moves
-    cpdef minimax(self, object board, int depth, float alpha=float("-inf"), float beta=float("inf"), bint maximizing_player=True,
-                int original_depth=-100, move=None):
+    cpdef tuple iterative_deepening(self, object board, float time_limit):
+        start_time = time.time()
+        best_move = None
+        cdef int depth = 1
+        cdef bint canceled_search = False
+        cdef float best_eval
+        pv_move = None
+        while not canceled_search:
+            best_eval = float("-inf")
+            evaluation, move = self.minimax(board, depth, pv_move=pv_move)
+            print(depth, best_move, move, best_eval, evaluation)
+            pv_move = move
+            depth += 1
+            print(evaluation > best_eval)
+            if evaluation > best_eval:
+                best_eval = evaluation
+                best_move = move
+            if time.time() - start_time > time_limit:
+                canceled_search = True
+        if depth == 1:
+            print("Random")
+            return float("-inf"), board.legal_moves[0]
+        return best_eval, best_move
+    cpdef tuple minimax(self, object board, int depth, float alpha=float("-inf"), float beta=float("inf"),
+                        bint maximizing_player=True,
+                        int original_depth=-100, move=None, pv_move=None):
         cdef float evaluation
         cdef list moves
         best_move = None
@@ -86,12 +109,12 @@ cdef class Search:
             evaluation = curr_eval.eval(depth, original_depth)
             self.zobrist_keys[zobrist_key] = (evaluation, depth, 'exact')
             return evaluation, best_move
-        if move is not None:
-            moves = [move]
-        else:
-            moves = list(board.legal_moves)
-            moves = self.sort_by_capture(moves, board)
-            moves = self.sort_by_check(moves, board)
+        moves = list(board.legal_moves)
+        moves = self.sort_by_capture(moves, board)
+        moves = self.sort_by_check(moves, board)
+        if pv_move is not None and pv_move in moves:
+            moves.remove(pv_move)
+            moves.insert(0, pv_move)
         if maximizing_player:
             max_eval = float("-inf")
             for move in moves:
@@ -128,4 +151,3 @@ cdef class Search:
             flag = 'exact' if min_eval < beta else 'upperbound'
             self.zobrist_keys[zobrist_key] = (min_eval, depth, flag)
             return min_eval, best_move
-

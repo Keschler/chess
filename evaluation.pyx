@@ -53,25 +53,23 @@ cdef class Eval:
 
     cdef float force_king_into_corner(self, float pre_score):
         cdef float evaluation = 0
+        cdef int bonus = 0
         cdef float multiplication = ((32 - chess.popcount(self.board.occupied)) / 100) / 2
+        cdef bint only_pawns_and_kings_left = False
         if self.only_pawns_and_kings_left() or -2 <= pre_score <= 2:
             multiplication = 0
+        if self.only_pawns_and_kings_left():
+            only_pawns_and_kings_left = True
         for square_index in range(64):
             if self.b_b_king & (1 << square_index):
                 evaluation += self.KING_ENDGAME_CHECKMATE_TABLE[square_index]
+                if only_pawns_and_kings_left:
+                    bonus -= self.KING_ENDGAME_TABLE[square_index]
+            elif self.b_w_king & (1 << square_index) and only_pawns_and_kings_left:
+                bonus += self.KING_ENDGAME_TABLE[square_index]
         cdef int dst_between_kings = self.distance_between_kings()
         evaluation += 14 - dst_between_kings
-        return evaluation * multiplication
-
-    cdef float get_king_into_center(self):
-        cdef int bonus = 0
-        if self.only_pawns_and_kings_left():
-            for square_index in range(64):
-                if self.b_b_king & (1 << square_index):
-                    bonus -= self.KING_ENDGAME_TABLE[square_index]
-                elif self.b_w_king & (1 << square_index):
-                    bonus += self.KING_ENDGAME_TABLE[square_index]
-        return bonus
+        return (evaluation * multiplication) + bonus
 
     cdef float king_safety(self):
         cdef float bonus = 0
@@ -81,7 +79,7 @@ cdef class Eval:
                 bonus += self.WHITE_KING_SAFETY_TABLE[square_index]
             elif self.b_b_king & (1 << square_index):
                 bonus -= self.BLACK_KING_SAFETY_TABLE[square_index]
-        return bonus*multiplication
+        return bonus * multiplication
 
     cdef float rook_mobility_bonus(self, list rooks):
         cdef float bonus = 0
@@ -159,7 +157,7 @@ cdef class Eval:
         cdef list isolated_pawns_black = []
         cdef list file_masks_white = []
         cdef list file_masks_black = []
-        cdef ulong file_A = 0x0101010101010101
+        cdef ulong file_a = 0x0101010101010101
         cdef int rank_index
         cdef ulong file_mask
         cdef ulong file_mask_left
@@ -169,7 +167,7 @@ cdef class Eval:
         for square_index in range(64):
             if self.b_w_pawn & (1 << square_index):
                 passed_pawns_white.append(square_index)
-                file_mask, triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_A)
+                file_mask, triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_a)
                 isolated_pawns_white.append(adjacent_file_mask)
                 file_masks_white.append(file_mask)
 
@@ -180,7 +178,7 @@ cdef class Eval:
                 passed_pawns_masks_white.append(passed_pawn_mask)
             elif self.b_b_pawn & (1 << square_index):
                 passed_pawns_black.append(square_index)
-                file_mask, triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_A)
+                file_mask, triple_file_mask, adjacent_file_mask = self.file_mask(square_index, file_a)
                 isolated_pawns_black.append(adjacent_file_mask)
                 file_masks_black.append(file_mask)
 
@@ -196,7 +194,8 @@ cdef class Eval:
         cdef int num_isolated_pawns = 0
         cdef int num_doubled_pawns = 0
         (passed_pawns_masks_white, passed_pawns_masks_black, passed_pawns_black,
-         passed_pawns_white, isolated_pawns_black, isolated_pawns_white, file_masks_white, file_mask_black) = self.passed_pawn_mask()
+         passed_pawns_white, isolated_pawns_black, isolated_pawns_white, file_masks_white,
+         file_mask_black) = self.passed_pawn_mask()
         for i in range(len(passed_pawns_white)):
             if (self.b_b_pawn & passed_pawns_masks_white[i]) == 0:  # If it's a passed white pawn
                 rank = chess.square_rank(passed_pawns_white[i])
@@ -205,7 +204,7 @@ cdef class Eval:
             if (self.b_w_pawn & isolated_pawns_white[i]) == 0:  # If it's an isolated pawn
                 num_isolated_pawns += 1
             pawns_on_file = self.b_w_pawn & file_masks_white[i]
-            if bin(pawns_on_file).count('1') > 1: # If it's a doubled pawn
+            if bin(pawns_on_file).count('1') > 1:  # If it's a doubled pawn
                 num_doubled_pawns += 1
         for k in range(len(passed_pawns_black)):
             if (self.b_w_pawn & passed_pawns_masks_black[k]) == 0:  # If it's a passed black pawn
@@ -215,7 +214,7 @@ cdef class Eval:
             if (self.b_b_pawn & isolated_pawns_black[k]) == 0:  # If it's an isolated pawn
                 num_isolated_pawns -= 1
             pawns_on_file = self.b_w_pawn & file_mask_black[k]
-            if bin(pawns_on_file).count('1') > 1: # If it's a doubled pawn
+            if bin(pawns_on_file).count('1') > 1:  # If it's a doubled pawn
                 num_doubled_pawns -= 1
         bonus = (num_isolated_pawns * 0.3) * -1
         bonus = (num_doubled_pawns * 0.3) * -1
@@ -233,10 +232,10 @@ cdef class Eval:
 
         # Define piece values
         cdef int pawn_value = 1
-        cdef float knight_value = 3.1
+        cdef int knight_value = 3
         cdef float bishop_value = 3.3
-        cdef int rook_value = 5
-        cdef int queen_value = 9
+        cdef float rook_value = 4.9
+        cdef float queen_value = 9.1
 
         # Calculate material balance
         cdef float white_material = (
@@ -266,16 +265,14 @@ cdef class Eval:
                 black_material += self.BLACK_PAWN_TABLE[square_index]
 
         # Additional bonuses
-        white_material += self.get_king_into_center()
-        black_material += self.get_king_into_center()
         cdef float king_corner_bonus = self.force_king_into_corner(white_material - black_material)
         cdef float mobility_bonus = self.mobility_bonus()
         cdef float pawns_bonus = self.pawns()
         cdef float king_safety = self.king_safety()
 
         # Final evaluation score
-        cdef float total_score = white_material - black_material + king_corner_bonus +  mobility_bonus + pawns_bonus + king_safety
-        print(
-            "Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
-            king_corner_bonus, pawns_bonus, king_safety)
+        cdef float total_score = white_material - black_material + king_corner_bonus + mobility_bonus + pawns_bonus + king_safety
+        #print(
+        #    "Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
+        #    king_corner_bonus, pawns_bonus, king_safety)
         return total_score

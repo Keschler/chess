@@ -1,5 +1,3 @@
-# cython: profile=True
-from multiprocessing import Pool, cpu_count
 import chess
 import chess.svg
 from search import Search
@@ -10,46 +8,29 @@ cdef void show_board(object chess_board):
     with open('chessboard.svg', 'w') as f:
         f.write(svg)
 
-cpdef tuple evaluate_move(tuple board_fen_move_depth):
-    board_fen, move, depth = board_fen_move_depth
-    board = chess.Board(board_fen)
+cpdef tuple evaluate_move(object chess_board):
     search = Search()
-    evaluation, best_move = search.minimax(board, depth, move=move)
-    return evaluation, move
+    best_move, evaluation = search.iterative_deepening(chess_board, 2)
+    return evaluation, best_move
 
 def main():
     cdef str current_move
     cdef list moves
+    cdef str board_fen
     chess_board = chess.Board()
-    chess_board.set_fen("r1bq1rk1/4bppp/p1n1pn2/1ppp4/8/1PNBPN2/PBPP1PPP/R2QK2R w KQq - 0 1")
-    cdef int depth = 5
-
+    search = Search()
     while True:
-        if chess.popcount(chess_board.occupied) < 10:
-            depth += 1
-        if chess.popcount(chess_board.occupied) < 5:
-            depth += 2
-
-        # Generate possible moves
-        moves = list(chess_board.legal_moves)
-        board_fen = chess_board.fen()  # Use FEN string to avoid copying the entire board object
-        board_move_depths = [(board_fen, move, depth) for move in moves]
         start = time()
-        # Evaluate moves in parallel
-        with Pool(processes=cpu_count()) as pool:
-            results = pool.map(evaluate_move, board_move_depths)
-        best_evaluation, best_move = max(results, key=lambda x: x[0])
+        best_move, best_eval = evaluate_move(chess_board)
         end = time()
-        print("Evaluation", best_evaluation, chess_board.fen(), results, end - start)
+        print("Evaluation", best_eval, chess_board.fen(), best_move, end - start)
         chess_board.push(best_move)
-
         if chess_board.is_checkmate():
             print("checkmate")
             break
         elif chess_board.is_stalemate():
             print("stalemate")
             break
-
         show_board(chess_board)
         current_move = input("Move: ")
         if current_move is None:
