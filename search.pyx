@@ -64,7 +64,7 @@ cdef class Search:
         while not canceled_search:
             best_eval = float("-inf")
             evaluation, move = self.minimax(board, depth, pv_move=pv_move)
-            #print(depth, best_move, move, best_eval, evaluation)
+            print(depth, best_move, move, best_eval, evaluation)
             pv_move = move
             depth += 1
             if evaluation > best_eval:

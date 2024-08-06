@@ -10,7 +10,7 @@ cdef void show_board(object chess_board):
 
 cpdef tuple evaluate_move(object chess_board):
     search = Search()
-    best_move, evaluation = search.iterative_deepening(chess_board, 2)
+    best_move, evaluation = search.iterative_deepening(chess_board, 3)
     return evaluation, best_move
 
 def main():
