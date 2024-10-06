@@ -47,15 +47,19 @@ cdef class Search:
             zobrist_key ^= self.zobrist_en_passant_file[ep_rank]
         return zobrist_key
     cdef list sort_by_capture(self, list moves, object board):
+        cdef list[int] capture_moves
+        cdef list[int] non_capture_moves
         capture_moves = [move for move in moves if board.is_capture(move)]
         non_capture_moves = [move for move in moves if not board.is_capture(move)]
         return capture_moves + non_capture_moves
     cdef list sort_by_check(self, list moves, object board):
+        cdef list[int] check_moves
+        cdef list[int] non_check_moves
         check_moves = [move for move in moves if board.gives_check(move)]
         non_check_moves = [move for move in moves if not board.gives_check(move)]
         return check_moves + non_check_moves
     cpdef tuple iterative_deepening(self, object board, float time_limit):
-        start_time = time.time()
+        cdef float start_time = time.monotonic()
         best_move = None
         cdef int depth = 1
         cdef bint canceled_search = False
@@ -63,22 +67,23 @@ cdef class Search:
         pv_move = None
         while not canceled_search:
             best_eval = float("-inf")
-            evaluation, move = self.minimax(board, depth, pv_move=pv_move)
-            print(depth, best_move, move, best_eval, evaluation)
+            evaluation, move = self.minimax(board, depth, alpha=float("-inf"), beta=float("inf"),
+                                            maximizing_player=True, original_depth=-100, move=None, pv_move=pv_move)
+            print(depth, best_move, move, best_eval, evaluation, canceled_search                        )
             pv_move = move
             depth += 1
             if evaluation > best_eval:
                 best_eval = evaluation
                 best_move = move
-            if time.time() - start_time > time_limit and depth % 2 != 0: # If the time limit is exceeded and the depth is odd -> Avoiding horizon effect
+            if time.monotonic() - start_time > time_limit:  # If the time limit is exceeded
                 canceled_search = True
         if depth == 1:
             print("Random")
             return float("-inf"), list(board.legal_moves)[0]
         return best_eval, best_move
-    cpdef tuple minimax(self, object board, int depth, float alpha=float("-inf"), float beta=float("inf"),
-                        bint maximizing_player=True,
-                        int original_depth=-100, move=None, pv_move=None):
+    cdef tuple minimax(self, object board, int depth, float alpha=float("-inf"), float beta=float("inf"),
+                       bint maximizing_player=True,
+                       int original_depth=-100, move=None, pv_move=None):
         cdef float evaluation
         cdef list moves
         best_move = None
@@ -112,12 +117,13 @@ cdef class Search:
             moves.insert(0, pv_move)
         if maximizing_player:
             max_eval = float("-inf")
+            # noinspection PyTypeChecker
             for move in (
                     moves):
                 new_board = board.copy()
                 new_board.push(move)
                 self.bitboard.update_bitboards(new_board)
-                evaluation, _ = self.minimax(new_board, depth - 1, alpha, beta,False, original_depth)
+                evaluation, _ = self.minimax(new_board, depth - 1, alpha, beta, False, original_depth)
                 if new_board.is_check():
                     evaluation += 0.1
                 if evaluation > max_eval:
