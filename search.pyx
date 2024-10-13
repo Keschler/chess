@@ -11,8 +11,7 @@ cdef class Search:
         object bitboard
         uint64_t zobrist_black_to_move
         dict zobrist_piece_keys
-        list zobrist_castling_rights
-        list zobrist_en_passant_file
+        list zobrist_castling_rights, zobrist_en_passant_file, killer_moves
         dict zobrist_keys
     def __init__(self):  # For transposition tables
         self.bitboard = Bitboards()
@@ -25,6 +24,8 @@ cdef class Search:
         self.zobrist_castling_rights = [random.getrandbits(64) for _ in range(16)]
         self.zobrist_en_passant_file = [random.getrandbits(64) for _ in range(8)]
         self.zobrist_keys = {}
+        cdef int max_depth = 100
+        self.killer_moves = [[] for _ in range(max_depth)]
 
     cdef uint64_t calculate_zobrist(self, object board):
         cdef uint64_t zobrist_key = 0
@@ -46,18 +47,21 @@ cdef class Search:
             ep_rank = chess.square_file(board.ep_square)
             zobrist_key ^= self.zobrist_en_passant_file[ep_rank]
         return zobrist_key
+
     cdef list sort_by_capture(self, list moves, object board):
         cdef list[int] capture_moves
         cdef list[int] non_capture_moves
         capture_moves = [move for move in moves if board.is_capture(move)]
         non_capture_moves = [move for move in moves if not board.is_capture(move)]
         return capture_moves + non_capture_moves
+
     cdef list sort_by_check(self, list moves, object board):
         cdef list[int] check_moves
         cdef list[int] non_check_moves
         check_moves = [move for move in moves if board.gives_check(move)]
         non_check_moves = [move for move in moves if not board.gives_check(move)]
         return check_moves + non_check_moves
+
     cpdef tuple iterative_deepening(self, object board, float time_limit):
         cdef float start_time = time.monotonic()
         best_move = None
@@ -69,7 +73,7 @@ cdef class Search:
             best_eval = float("-inf")
             evaluation, move = self.minimax(board, depth, alpha=float("-inf"), beta=float("inf"),
                                             maximizing_player=True, original_depth=-100, move=None, pv_move=pv_move)
-            print(depth, best_move, move, best_eval, evaluation, canceled_search                        )
+            print(depth, best_move, move, best_eval, evaluation, canceled_search)
             pv_move = move
             depth += 1
             if evaluation > best_eval:
@@ -101,7 +105,6 @@ cdef class Search:
                     beta = stored_eval
                 if alpha >= beta:
                     return stored_eval, best_move
-
         if depth == 0 or board.is_game_over():
             self.bitboard.update_bitboards(board)
             bitboard_tables = self.bitboard.return_tables()
@@ -112,6 +115,10 @@ cdef class Search:
         moves = list(board.legal_moves)
         moves = self.sort_by_capture(moves, board)
         moves = self.sort_by_check(moves, board)
+        killer_moves_at_curr_depth = self.killer_moves[depth]
+        legal_killer_moves = [move for move in killer_moves_at_curr_depth if
+                              move in moves]  # Filter out the legal moves
+        moves = legal_killer_moves + [move for move in moves if move not in legal_killer_moves]
         if pv_move is not None and pv_move in moves:
             moves.remove(pv_move)
             moves.insert(0, pv_move)
@@ -120,17 +127,22 @@ cdef class Search:
             # noinspection PyTypeChecker
             for move in (
                     moves):
-                new_board = board.copy()
-                new_board.push(move)
-                self.bitboard.update_bitboards(new_board)
-                evaluation, _ = self.minimax(new_board, depth - 1, alpha, beta, False, original_depth)
-                if new_board.is_check():
+                try:
+                    board.push(move)
+                except AssertionError:
+                    continue
+                self.bitboard.update_bitboards(board)
+                evaluation, _ = self.minimax(board, depth - 1, alpha, beta, False, original_depth)
+                if board.is_check():
                     evaluation += 0.1
+                board.pop()
                 if evaluation > max_eval:
                     max_eval = evaluation
                     best_move = move
                 alpha = max(alpha, evaluation)
                 if beta <= alpha:
+                    if move not in self.killer_moves[depth] and len(self.killer_moves[depth]) < 2:
+                        self.killer_moves[depth].append(move)
                     break
             flag = 'exact' if max_eval > alpha else 'lowerbound'
             self.zobrist_keys[zobrist_key] = (max_eval, depth, flag)
@@ -138,17 +150,22 @@ cdef class Search:
         else:
             min_eval = float("inf")
             for move in moves:
-                new_board = board.copy()
-                new_board.push(move)
-                self.bitboard.update_bitboards(new_board)
-                evaluation, _ = self.minimax(new_board, depth - 1, alpha, beta, True, original_depth)
-                if new_board.is_check():
+                try:
+                    board.push(move)
+                except AssertionError:
+                    continue
+                self.bitboard.update_bitboards(board)
+                evaluation, _ = self.minimax(board, depth - 1, alpha, beta, True, original_depth)
+                if board.is_check():
                     evaluation -= 0.1
+                board.pop()
                 if evaluation < min_eval:
                     min_eval = evaluation
                     best_move = move
                 beta = min(beta, evaluation)
                 if beta <= alpha:
+                    if move not in self.killer_moves[depth] and len(self.killer_moves[depth]) < 2:
+                        self.killer_moves[depth].append(move)
                     break
             flag = 'exact' if min_eval < beta else 'upperbound'
             self.zobrist_keys[zobrist_key] = (min_eval, depth, flag)

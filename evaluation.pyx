@@ -66,15 +66,15 @@ cdef class Eval:
         cdef int dst_between_kings = file_dst + rank_dst
         return dst_between_kings
 
-    cdef float force_king_into_corner(self, float pre_score):
+    cdef float evaluate_king_endgame_plus_checkmate(self, float pre_score):
         cdef float evaluation = 0
         cdef float bonus = 0
         cdef float multiplication = ((32 - chess.popcount(self.board.occupied)) / 100) / 2
         cdef bint only_pawns_and_kings_left = False
-        if self.only_pawns_and_kings_left() or -2 <= pre_score <= 2:
-            multiplication = 0
         if self.only_pawns_and_kings_left():
             only_pawns_and_kings_left = True
+            if -2 <= pre_score <= 2:
+                multiplication = 0
         for square_index in range(64):
             if self.b_b_king & (1 << square_index):
                 evaluation += self.KING_ENDGAME_CHECKMATE_TABLE[square_index]
@@ -286,26 +286,29 @@ cdef class Eval:
         bonus = (num_isolated_pawns * 0.3) * -1
         bonus = (num_doubled_pawns * 0.3) * -1
         return bonus
-    cdef void positional_bonus(self):
-        cdef int bonus = 0
+    cdef float positional_bonus(self):
+        cdef float bonus = 0
         for square_index in range(64):
             if self.b_w_knight & (1 << square_index):
                 bonus += self.KNIGHT_TABLE[square_index]
             if self.b_w_pawn & (1 << square_index):
                 bonus += self.WHITE_PAWN_TABLE[square_index]
             if self.b_b_knight & (1 << square_index):
-                bonus += self.KNIGHT_TABLE[square_index]
+                bonus -= self.KNIGHT_TABLE[square_index]
             if self.b_b_pawn & (1 << square_index):
                 bonus -= self.BLACK_PAWN_TABLE[square_index]
+        return bonus
     cpdef float eval(self, int depth, int original_depth):
-        if self.board.is_checkmate():
-            if self.board.turn == chess.BLACK:  # If white checkmates
-                return 1000 - abs((depth - original_depth))
+        game_outcome = self.board.outcome(claim_draw=True)
+        if game_outcome is not None:
+            # Check if the outcome is a draw
+            if game_outcome.winner is None:
+                return 0
             else:
-                return -1000 + abs((depth - original_depth))
-        if (self.board.can_claim_threefold_repetition() or self.board.is_repetition() or self.board.is_variant_draw()
-                or self.board.is_stalemate()):
-            return 0
+                if self.board.turn == chess.BLACK:  # If white checkmates
+                    return 1000 - abs((depth - original_depth))
+                else:
+                    return -1000 + abs((depth - original_depth))
 
         # Define piece values
         cdef int pawn_value = 1
@@ -313,6 +316,8 @@ cdef class Eval:
         cdef float bishop_value = 3.3
         cdef float rook_value = 4.9
         cdef float queen_value = 9.1
+        cdef float threshold_value = 2.5
+        cdef float positional_bonus, mobility_bonus, pawns_bonus, king_safety, king_corner_and_endgame_bonus
 
         # Calculate material balance
         cdef float white_material = (
@@ -329,15 +334,17 @@ cdef class Eval:
                 rook_value * chess.popcount(self.b_b_rook) +
                 queen_value * chess.popcount(self.b_b_queen)
         )
-
-        # Additional bonuses
-        cdef float positional_bonus = self.positional_bonus()
-        cdef float king_corner_bonus = self.force_king_into_corner(white_material - black_material)
-        cdef float mobility_bonus = self.mobility_bonus()
-        cdef float pawns_bonus = self.pawns()
-        cdef float king_safety = self.king_safety()
+        if abs(white_material - black_material) < threshold_value:  # If the material count is balanced
+            positional_bonus = self.positional_bonus()
+            mobility_bonus = self.mobility_bonus()
+            pawns_bonus = self.pawns()
+            king_safety = self.king_safety()
+            king_corner_and_endgame_bonus = self.evaluate_king_endgame_plus_checkmate(white_material - black_material)
+        else:
+            king_corner_and_endgame_bonus = self.evaluate_king_endgame_plus_checkmate(white_material - black_material)
+            positional_bonus = mobility_bonus = pawns_bonus = king_safety = 0
         # Final evaluation score
-        cdef float total_score = white_material - black_material + king_corner_bonus + mobility_bonus + pawns_bonus + king_safety
+        cdef float total_score = white_material - black_material + king_corner_and_endgame_bonus + mobility_bonus + pawns_bonus + king_safety + positional_bonus
         #print(
         #    "Total score", total_score, "Pre score", white_material - black_material, self.board.fen(), mobility_bonus,
         #    king_corner_bonus, pawns_bonus, king_safety)
